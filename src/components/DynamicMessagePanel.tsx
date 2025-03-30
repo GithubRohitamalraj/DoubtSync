@@ -1,108 +1,294 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import  io  from "socket.io-client";
+import io from "socket.io-client";
+import { MessageCircle } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 
 const socket = io("http://localhost:5000");
 
-const DynamicMessagePanel = () => {
-  const [user, setUser] = useState<any>(null);
-  const [receiverInput, setReceiverInput] = useState("");
-  const [receiverId, setReceiverId] = useState<string | null>(null);
-  const [receiverEmail, setReceiverEmail] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<any[]>([]);
+interface Connection {
+  id: string;
+  partner_id: string;
+  partner_full_name: string;
+  partner_profile_image: string;
+}
 
+interface Message {
+  id?: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at?: string;
+}
+
+interface DynamicMessagePanelProps {
+  currentUserId: string;
+  connectionId?: string | null;
+  onBack: () => void;
+}
+
+const DynamicMessagePanel = ({ currentUserId, connectionId, onBack }: DynamicMessagePanelProps) => {
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const messageEndRef = useRef<HTMLDivElement>(null);
+
+  // Join socket room when component mounts
   useEffect(() => {
-    // Get logged-in user
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setUser(data.user);
-        socket.emit("join", data.user.id);
+    if (currentUserId) {
+      socket.emit("join", currentUserId);
+    }
+
+    // Listen for incoming messages
+    socket.on("receive_message", (msg: Message) => {
+      if ((selectedConnection && (
+        (msg.sender_id === selectedConnection.partner_id && msg.receiver_id === currentUserId) ||
+        (msg.sender_id === currentUserId && msg.receiver_id === selectedConnection.partner_id)
+      )) || !selectedConnection) {
+        setMessages((prev) => [...prev, msg]);
       }
     });
 
-    // Listen for incoming messages
-    socket.on("receive_message", (msg:string) => {
-      setMessages((prev) => [...prev, msg]);
-    });
-  }, []);
+    return () => {
+      socket.off("receive_message");
+    };
+  }, [currentUserId, selectedConnection]);
 
-  // Fetch receiver ID from email
-  const fetchReceiverId = async () => {
-    if (!receiverInput) return;
+  // Fetch user connections
+  useEffect(() => {
+    const fetchConnections = async () => {
+      setLoading(true);
+      try {
+        // First determine if the user is a student or mentor
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', currentUserId)
+          .single();
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email")
-      .eq("email", receiverInput)
-      .single();
+        const isStudent = profileData?.user_type === 'student';
+        
+        // Then get connections based on user type
+        const partnerJoin = isStudent
+          ? 'profiles!connections_mentor_id_fk(id, full_name, profile_image)'
+          : 'profiles!connections_student_id_fk(id, full_name, profile_image)';
 
-    if (error || !data) {
-      console.error("User not found");
-      return;
+        const filterColumn = isStudent ? 'student_id' : 'mentor_id';
+        const partnerColumn = isStudent ? 'mentor_id' : 'student_id';
+
+        const { data, error } = await supabase
+          .from('connections')
+          .select(`id, ${partnerColumn}, ${partnerJoin}`)
+          .eq(filterColumn, currentUserId)
+          .eq('status', 'accepted');
+
+        if (error) throw error;
+
+        const formattedConnections = data.map((connection: any) => {
+          const partnerProfile = connection.profiles || {};
+          return {
+            id: connection.id,
+            partner_id: connection[partnerColumn],
+            partner_full_name: partnerProfile.full_name || 'Unknown',
+            partner_profile_image: partnerProfile.profile_image || '/default-avatar.png',
+          };
+        });
+
+        setConnections(formattedConnections);
+
+        // If connectionId is provided, set the selected connection
+        if (connectionId) {
+          const selected = formattedConnections.find(conn => conn.id === connectionId);
+          if (selected) {
+            setSelectedConnection(selected);
+            fetchMessages(selected.partner_id);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching connections:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (currentUserId) {
+      fetchConnections();
     }
+  }, [currentUserId, connectionId]);
 
-    setReceiverId(data.id);
-    setReceiverEmail(data.email);
+  // Fetch messages for a selected connection
+  const fetchMessages = async (partnerId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUserId})`)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages(data || []);
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+    }
   };
 
-  // Send Message
+  // Select a connection to chat with
+  const handleSelectConnection = (connection: Connection) => {
+    setSelectedConnection(connection);
+    fetchMessages(connection.partner_id);
+  };
+
+  // Send a message
   const sendMessage = async () => {
-    if (!message || !receiverId) return;
+    if (!message.trim() || !selectedConnection) return;
 
-    const newMessage = { sender_id: user.id, receiver_id: receiverId, content: message };
+    const newMessage: Message = {
+      sender_id: currentUserId,
+      receiver_id: selectedConnection.partner_id,
+      content: message.trim()
+    };
 
-    socket.emit("send_message", newMessage);
-    await supabase.from("messages").insert([newMessage]);
+    try {
+      // Save to Supabase
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([newMessage])
+        .select();
 
-    setMessages((prev) => [...prev, newMessage]);
-    setMessage("");
+      if (error) throw error;
+
+      // Send via Socket.io
+      socket.emit("send_message", data[0]);
+
+      // Update local state
+      setMessages(prev => [...prev, data[0]]);
+      setMessage("");
+    } catch (err) {
+      console.error('Error sending message:', err);
+    }
   };
+
+  // Scroll to bottom of messages
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Handle enter key press for sending messages
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading messages...</div>;
+  }
 
   return (
-    <div className="p-4 bg-white shadow-md rounded-lg">
-      <h2 className="text-xl font-bold mb-4">Messages</h2>
-
-      {/* Input to Find Receiver */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Enter Receiver Email or ID"
-          className="w-full p-2 border rounded"
-          value={receiverInput}
-          onChange={(e) => setReceiverInput(e.target.value)}
-        />
-        <button onClick={fetchReceiverId} className="mt-2 bg-blue-500 text-white px-4 py-2 rounded">
-          Find User
-        </button>
+    <div className="bg-white rounded-lg shadow">
+      <div className="p-6 border-b flex justify-between items-center">
+        <h2 className="text-2xl font-semibold">Messages</h2>
+        {selectedConnection && (
+          <button 
+            onClick={() => setSelectedConnection(null)} 
+            className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+          >
+            Back to Connections
+          </button>
+        )}
       </div>
 
-      {/* Chat Panel */}
-      {receiverId && (
-        <>
-          <h3 className="font-bold text-lg">Chat with {receiverEmail}</h3>
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Type a message"
-              className="w-full p-2 border rounded"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+      {!selectedConnection ? (
+        // Show list of connections
+        <div className="p-6">
+          <h3 className="text-xl font-semibold mb-4">Your Connections</h3>
+          {connections.length === 0 ? (
+            <p className="text-gray-500">No connections yet. Connect with mentors or students to start messaging.</p>
+          ) : (
+            connections.map((connection) => (
+              <div 
+                key={connection.id} 
+                className="flex items-center justify-between p-4 border rounded-lg mb-2 cursor-pointer hover:bg-gray-50"
+                onClick={() => handleSelectConnection(connection)}
+              >
+                <div className="flex items-center space-x-4">
+                  <img 
+                    src={connection.partner_profile_image} 
+                    alt={connection.partner_full_name} 
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                  <div>
+                    <h3 className="font-medium">{connection.partner_full_name}</h3>
+                  </div>
+                </div>
+                <MessageCircle className="w-5 h-5 text-blue-600" />
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        // Show chat with selected connection
+        <div className="flex flex-col h-[600px]">
+          {/* Chat header */}
+          <div className="p-4 border-b flex items-center space-x-3">
+            <img 
+              src={selectedConnection.partner_profile_image} 
+              alt={selectedConnection.partner_full_name} 
+              className="w-10 h-10 rounded-full object-cover"
             />
-            <button onClick={sendMessage} className="mt-2 bg-green-500 text-white px-4 py-2 rounded">
-              Send
-            </button>
+            <h3 className="font-medium">{selectedConnection.partner_full_name}</h3>
           </div>
-
-          <div className="border-t pt-4">
-            <h3 className="font-bold">Chat History</h3>
-            {messages.map((msg, index) => (
-              <p key={index} className={`p-2 rounded ${msg.sender_id === user?.id ? "bg-blue-100" : "bg-gray-200"}`}>
-                {msg.sender_id === user?.id ? "You" : "Them"}: {msg.content}
-              </p>
-            ))}
+          
+          {/* Messages area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 ? (
+              <p className="text-center text-gray-500 my-10">No messages yet. Start the conversation!</p>
+            ) : (
+              messages.map((msg, index) => (
+                <div 
+                  key={msg.id || index} 
+                  className={`max-w-[75%] p-3 rounded-lg ${
+                    msg.sender_id === currentUserId 
+                      ? "ml-auto bg-blue-600 text-white rounded-tr-none" 
+                      : "mr-auto bg-gray-200 text-gray-800 rounded-tl-none"
+                  }`}
+                >
+                  <p>{msg.content}</p>
+                  {msg.created_at && (
+                    <p className={`text-xs mt-1 ${msg.sender_id === currentUserId ? "text-blue-100" : "text-gray-500"}`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+            <div ref={messageEndRef} />
           </div>
-        </>
+          
+          {/* Input area */}
+          <div className="p-4 border-t">
+            <div className="flex space-x-2">
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type a message..."
+                className="flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={2}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!message.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

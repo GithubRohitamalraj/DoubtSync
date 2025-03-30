@@ -18,7 +18,7 @@ interface Connection {
 interface ConnectionsListProps {
   currentUserId: string;
   isStudent: boolean;
-  onSelectConnection: (connectionId: string) => void;
+  onSelectConnection: (connectionId: string, partnerFullName: string, partnerProfileImage: string) => void;
 }
 
 export default function ConnectionsList({ currentUserId, isStudent, onSelectConnection }: ConnectionsListProps) {
@@ -127,12 +127,13 @@ export default function ConnectionsList({ currentUserId, isStudent, onSelectConn
                 </div>
               </div>
               <button
-                onClick={() => onSelectConnection(connection.id)}
+                onClick={() => onSelectConnection(connection.id, connection.partner_full_name, connection.partner_profile_image)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <MessageCircle className="w-4 h-4" />
                 <span>Message</span>
               </button>
+
             </div>
           ))
         )}

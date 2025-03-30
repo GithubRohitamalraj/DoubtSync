@@ -253,13 +253,13 @@ export default function Dashboard() {
 )}
 
 
-            {activeTab === 'messages' && selectedConnectionId && (
-              <DynamicMessagePanel
-                currentUserId={user.id}
-                connectionId={selectedConnectionId} onBack={function (): void {
-                  throw new Error('Function not implemented.');
-                } }              />
-            )}
+{activeTab === 'messages' && (
+  <DynamicMessagePanel
+    currentUserId={user.id}
+    connectionId={selectedConnectionId}
+    onBack={() => setSelectedConnectionId(null)}
+  />
+)}
 
             {activeTab === 'profile' && <ProfileView />}
           </div>
