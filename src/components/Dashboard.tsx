@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('mentors');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [inputSearchTerm, setInputSearchTerm] = useState('');
   const navigate = useNavigate();
   const [notificationCount] = useState(0); // This can be fetched dynamically if needed
 
@@ -29,6 +31,11 @@ export default function Dashboard() {
     };
     getUser();
   }, [navigate]);
+
+  const handleSearch = () => {
+    setSearchTerm(inputSearchTerm);
+    console.log("Search initiated with term:", inputSearchTerm);
+  };
 
   if (!user) return null;
 
@@ -211,16 +218,35 @@ export default function Dashboard() {
                   <div className="bg-white rounded-lg shadow">
                     <div className="p-6 border-b">
                       <h2 className="text-2xl font-semibold mb-6">Find Your Perfect Mentor</h2>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        <input
-                          type="text"
-                          placeholder="Search mentors by name or subject..."
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                        />
+                      <div className="flex gap-2">
+                        <div className="relative flex-grow">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          <input
+                            type="text"
+                            placeholder="Search mentors by name or subject..."
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                            value={inputSearchTerm}
+                            onChange={(e) => setInputSearchTerm(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSearch();
+                              }
+                            }}
+                          />
+                        </div>
+                        <button
+                          onClick={handleSearch}
+                          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Search
+                        </button>
                       </div>
                     </div>
-                    <MentorList currentUserId={user.id} isStudent={true} />
+                    <MentorList 
+                      currentUserId={user.id} 
+                      isStudent={true} 
+                      searchTerm={searchTerm} 
+                    />
                   </div>
                 ) : (
                   // Mentor view: Leaderboard and notifications
@@ -241,25 +267,24 @@ export default function Dashboard() {
               </div>
             )}
 
-{activeTab === 'connections' && (
-  <ConnectionsList 
-    currentUserId={user.id}
-    isStudent={isStudent}
-    onSelectConnection={(connectionId) => {
-      setSelectedConnectionId(connectionId);
-      setActiveTab('messages');
-    }}
-  />
-)}
+            {activeTab === 'connections' && (
+              <ConnectionsList 
+                currentUserId={user.id}
+                isStudent={isStudent}
+                onSelectConnection={(connectionId) => {
+                  setSelectedConnectionId(connectionId);
+                  setActiveTab('messages');
+                }}
+              />
+            )}
 
-
-{activeTab === 'messages' && (
-  <DynamicMessagePanel
-    currentUserId={user.id}
-    connectionId={selectedConnectionId}
-    onBack={() => setSelectedConnectionId(null)}
-  />
-)}
+            {activeTab === 'messages' && (
+              <DynamicMessagePanel
+                currentUserId={user.id}
+                connectionId={selectedConnectionId}
+                onBack={() => setSelectedConnectionId(null)}
+              />
+            )}
 
             {activeTab === 'profile' && <ProfileView />}
           </div>

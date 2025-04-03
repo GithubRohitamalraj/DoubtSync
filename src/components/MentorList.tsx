@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
-
 interface MentorListProps {
   isStudent: boolean;
   currentUserId: string;
+  searchTerm?: string;
 }
 
 interface Mentor {
@@ -18,10 +18,9 @@ interface Mentor {
   online: boolean | null;
 }
 
-export default function MentorList({ isStudent }: Readonly<MentorListProps>) {
+export default function MentorList({ isStudent, currentUserId, searchTerm = '' }: Readonly<MentorListProps>) {
   const [mentors, setMentors] = useState<Mentor[]>([]);
   const [filteredMentors, setFilteredMentors] = useState<Mentor[]>([]);
-  const [searchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -60,19 +59,22 @@ export default function MentorList({ isStudent }: Readonly<MentorListProps>) {
     fetchMentors();
   }, []);
 
+  // Filter mentors whenever searchTerm changes
   useEffect(() => {
-    // Filter mentors based on search term
-    if (!searchTerm.trim()) {
+    console.log('Search term changed:', searchTerm);
+    
+    if (!searchTerm || !searchTerm.trim()) {
       setFilteredMentors(mentors);
       return;
     }
 
     const lowerCaseSearch = searchTerm.toLowerCase();
     const results = mentors.filter(mentor => 
-      mentor.full_name.toLowerCase().includes(lowerCaseSearch) ||
-      mentor.expertise.toLowerCase().includes(lowerCaseSearch)
+      (mentor.full_name && mentor.full_name.toLowerCase().includes(lowerCaseSearch)) ||
+      (mentor.expertise && mentor.expertise.toLowerCase().includes(lowerCaseSearch))
     );
     
+    console.log(`Found ${results.length} results for "${searchTerm}"`);
     setFilteredMentors(results);
   }, [searchTerm, mentors]);
 
@@ -97,12 +99,11 @@ export default function MentorList({ isStudent }: Readonly<MentorListProps>) {
           {topMentors.map((mentor) => (
             <div key={mentor.id} className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer" onClick={() => navigate(`/mentor/${mentor.id}`)}>
               <div className="p-5 text-center">
-              <img
-  src={mentor.profile_image || '/default-avatar.png'}
-  alt={mentor.full_name}
-  className="w-24 h-24 rounded-full object-cover"
-/>
-
+                <img
+                  src={mentor.profile_image || '/default-avatar.png'}
+                  alt={mentor.full_name}
+                  className="w-24 h-24 rounded-full object-cover"
+                />
                 <h3 className="text-lg font-medium">{mentor.full_name}</h3>
                 <p className="text-sm text-gray-500 mb-2">{mentor.expertise}</p>
                 <div className="flex items-center justify-center text-yellow-400 mb-1">
@@ -130,9 +131,9 @@ export default function MentorList({ isStudent }: Readonly<MentorListProps>) {
                 <div className="flex items-center space-x-4">
                   <div className="relative">
                     <img
-                      src={mentor.profile_image}
+                      src={mentor.profile_image || '/default-avatar.png'}
                       alt={mentor.full_name}
-                      className="w-24 h-24 rounded-full object-cove"
+                      className="w-24 h-24 rounded-full object-cover"
                     />
                     {mentor.online && (
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
@@ -155,11 +156,17 @@ export default function MentorList({ isStudent }: Readonly<MentorListProps>) {
                 </div>
                 
                 {isStudent ? (
-                  <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" onClick={() => navigate(`/mentor/${mentor.id}`)}>
-                  View Profile
-                </button>
+                  <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/mentor/${mentor.id}`);
+                  }}>
+                    View Profile
+                  </button>
                 ) : (
-                  <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" onClick={() => navigate(`/mentor/${mentor.id}`)}>
+                  <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/mentor/${mentor.id}`);
+                  }}>
                     View Profile
                   </button>
                 )}

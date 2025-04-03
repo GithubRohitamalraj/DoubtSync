@@ -113,6 +113,7 @@ export default function ProfileInformation() {
         if (imageError) throw imageError;
         profileImageUrl = imageData?.path || "";
         console.log("Profile Image URL:", profileImageUrl);
+        
       }
   
       // Upload credentials for mentors

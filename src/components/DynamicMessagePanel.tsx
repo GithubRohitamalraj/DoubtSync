@@ -35,6 +35,18 @@ const DynamicMessagePanel = ({ currentUserId, connectionId, onBack }: DynamicMes
   const [loading, setLoading] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
+  // Function to get the public URL for profile images
+  const getProfileImageUrl = (filePath: string) => {
+    if (!filePath) return '/default-avatar.png';
+    
+    // If the path already contains a full URL, return it as is
+    if (filePath.startsWith('http')) return filePath;
+    
+    // Otherwise, generate public URL from Supabase storage
+    const { data } = supabase.storage.from('profile-buckets').getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
   // Join socket room when component mounts
   useEffect(() => {
     if (currentUserId) {
@@ -215,11 +227,10 @@ const DynamicMessagePanel = ({ currentUserId, connectionId, onBack }: DynamicMes
                 onClick={() => handleSelectConnection(connection)}
               >
                 <div className="flex items-center space-x-4">
-                  <img 
-                    src={connection.partner_profile_image} 
-                    alt={connection.partner_full_name} 
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
+                  <Avatar className="w-12 h-12">
+                    <AvatarImage src={getProfileImageUrl(connection.partner_profile_image)} alt={connection.partner_full_name} />
+                    <AvatarFallback>{connection.partner_full_name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
                   <div>
                     <h3 className="font-medium">{connection.partner_full_name}</h3>
                   </div>
@@ -234,11 +245,10 @@ const DynamicMessagePanel = ({ currentUserId, connectionId, onBack }: DynamicMes
         <div className="flex flex-col h-[600px]">
           {/* Chat header */}
           <div className="p-4 border-b flex items-center space-x-3">
-            <img 
-              src={selectedConnection.partner_profile_image} 
-              alt={selectedConnection.partner_full_name} 
-              className="w-10 h-10 rounded-full object-cover"
-            />
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={getProfileImageUrl(selectedConnection.partner_profile_image)} alt={selectedConnection.partner_full_name} />
+              <AvatarFallback>{selectedConnection.partner_full_name.substring(0, 2).toUpperCase()}</AvatarFallback>
+            </Avatar>
             <h3 className="font-medium">{selectedConnection.partner_full_name}</h3>
           </div>
           
